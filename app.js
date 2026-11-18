@@ -116,8 +116,8 @@
   const getReq = (id) => requests.find((x) => x.id === id);
   const out = (id) => s.loans.find((l) => l.asset === id && !l.back);
   const label = (x) => {
-    const t = String(x || "").trim().toUpperCase().replace(/s+/g, "");
-    const m = t.match(/^([A-Z]{2})-?(d+)$/);
+    const t = String(x || "").trim().toUpperCase().replace(/\s+/g, "");
+    const m = t.match(/^([A-Z]{2})-?(\d+)$/);
     return m ? m[1] + "-" + m[2].padStart(2, "0") : t;
   };
   const stillOut = (req) =>
