@@ -90,7 +90,7 @@
     ["Desk book", "messages-square"],
   ];
   const original = () => ({
-    version: 1,
+    version: 2,
     tab: "Requests",
     phase: 0,
     selected: "",
@@ -107,6 +107,7 @@
     ],
     notes: [],
     editing: false,
+    checkin: null,
     onlyOpen: true,
     notice: "Sample shift · All records are fictional.",
   });
@@ -114,6 +115,70 @@
   const getAsset = (id) => assets.find((x) => x.id === id);
   const getReq = (id) => requests.find((x) => x.id === id);
   const out = (id) => s.loans.find((l) => l.asset === id && !l.back);
+  const label = (x) => {
+    const t = String(x || "").trim().toUpperCase().replace(/s+/g, "");
+    const m = t.match(/^([A-Z]{2})-?(d+)$/);
+    return m ? m[1] + "-" + m[2].padStart(2, "0") : t;
+  };
+  const stillOut = (req) =>
+    s.loans
+      .filter((l) => l.req === req && !l.back)
+      .map((l) => l.asset + " with " + l.who);
+  // Close a slip only from the unit on the counter, never from the row clicked.
+  function checkIn(raw, by) {
+    const id = label(raw);
+    const unit = getAsset(id);
+    if (!id) return "Read the unit ID off the label on the item.";
+    if (!unit)
+      return (
+        "No desk unit is labelled " +
+        id +
+        ". Desk labels look like AD-12. An unlabelled item may be personal property. No slip was closed."
+      );
+    const l = out(id);
+    if (!l) {
+      const same = s.loans.filter(
+        (x) => !x.back && getAsset(x.asset).type === unit.type,
+      );
+      return (
+        id +
+        (unit.repair
+          ? " is booked into repair, not on loan."
+          : " is not on loan. It should already be on shelf " + unit.bin + ".") +
+        (same.length
+          ? " The open " +
+            unit.type +
+            " slip is " +
+            same
+              .map(
+                (x) =>
+                  "L-" + x.num + " for " + x.asset + " (" + x.req + ", " + x.who + ")",
+              )
+              .join("; ") +
+            ". Ask for the unit that left."
+          : " No slip was closed.")
+      );
+    }
+    if (!people.includes(by)) return "Choose who handed the unit over.";
+    l.back = true;
+    l.by = by;
+    l.at = shifts[s.phase].time;
+    const rest = stillOut(l.req);
+    s.checkin = null;
+    s.notice =
+      id +
+      " checked in from " +
+      by +
+      (by !== l.who ? " (collected by " + l.who + ")" : "") +
+      ". Slip L-" +
+      l.num +
+      " closed. " +
+      l.req +
+      (rest.length
+        ? " still out: " + rest.join(", ") + "."
+        : " has nothing left out.");
+    return "";
+  }
   const esc = (x) =>
     String(x).replace(
       /[&<>"']/g,
@@ -224,10 +289,34 @@
     let html = head(
       "Loan register",
       "One slip per physical unit",
-      s.editing
+      s.editing || s.checkin
         ? btn("Cancel", "cancel")
-        : btn("New issue slip", "new", "", "primary"),
+        : '<div class="buttons">' +
+            btn("Check in a unit", "checkin") +
+            btn("New issue slip", "new", "", "primary") +
+            "</div>",
     );
+    if (s.checkin) {
+      const c = s.checkin;
+      return (
+        html +
+        '<form data-checkin novalidate><div class="form"><label><span>Unit ID on the label</span><input name="label" autocomplete="off" spellcheck="false" placeholder="e.g. AD-12" aria-describedby="checkin-help' +
+        (c.err ? " checkin-error" : "") +
+        '" value="' +
+        esc(c.label) +
+        '"' +
+        (c.err ? ' aria-invalid="true"' : "") +
+        ' /></label><label><span>Handed over by</span><select name="by"><option value="">Select…</option>' +
+        opts(people.map((p) => [p, p])) +
+        '</select></label><small id="checkin-help" class="full">Read the ID off the item in front of you, not off the slip. The app finds the slip that unit left on.</small>' +
+        (c.err
+          ? '<p id="checkin-error" class="full formerror" role="alert">' +
+            esc(c.err) +
+            "</p>"
+          : "") +
+        '</div><button type="submit" class="primary">Confirm return</button></form>'
+      );
+    }
     if (s.editing) {
       const available = assets.filter((a) => !a.repair && !out(a.id));
       const select = (label, key, options) =>
@@ -287,7 +376,12 @@
     for (const l of shown)
       html += row(
         "L-" + l.num + " · " + l.asset,
-        l.req + " · " + l.who + " · Due " + l.due,
+        l.req +
+          " · " +
+          l.who +
+          " · Due " +
+          l.due +
+          (l.back && l.by ? " · Returned " + l.at + " by " + l.by : ""),
         l.back
           ? badge("Returned")
           : btn("Record return", "return", String(l.num)),
@@ -363,6 +457,10 @@
       .join("");
     q("[data-page]").innerHTML = screens[s.tab]();
     if (q("[data-filter]")) q("[data-filter]").value = s.filter;
+    if (q("[data-checkin]")) {
+      q('[data-checkin] [name="by"]').value = s.checkin.by;
+      q('[data-checkin] [name="label"]').focus();
+    }
     q("[data-status]").textContent = s.notice;
   }
   function commit(msg) {
@@ -390,6 +488,7 @@
       case "tab":
         s.tab = v;
         s.editing = false;
+        s.checkin = null;
         break;
       case "close":
         s.selected = "";
@@ -399,18 +498,25 @@
         break;
       case "new":
         s.editing = true;
+        s.checkin = null;
+        break;
+      case "checkin":
+        s.checkin = { label: "", by: "", err: "" };
+        s.editing = false;
         break;
       case "cancel":
         s.editing = false;
+        s.checkin = null;
         break;
       case "scope":
         s.onlyOpen = v === "0";
         break;
       case "return": {
+        // The row is only a way in. The label on the item decides which slip closes.
         const l = s.loans.find((l) => l.num === Number(v));
         if (!l || l.back) return;
-        l.back = true;
-        s.notice = l.asset + " returned to stock. Slip L-" + l.num + " closed.";
+        s.checkin = { label: "", by: "", err: "" };
+        s.editing = false;
         break;
       }
     }
@@ -431,6 +537,14 @@
       if (!text) return;
       s.notes.push({ phase: s.phase, text });
       commit("Handover note saved.");
+      return;
+    }
+    if (f.matches("[data-checkin]")) {
+      const lab = String(form.get("label") || ""),
+        by = String(form.get("by") || "");
+      const err = checkIn(lab, by);
+      if (err) s.checkin = { label: lab, by, err };
+      commit();
       return;
     }
     if (!f.matches("[data-issue]")) return;
@@ -463,7 +577,7 @@
   function restore(d) {
     if (
       !d ||
-      d.version !== 1 ||
+      (d.version !== 1 && d.version !== 2) ||
       !Object.hasOwn(screens, d.tab) ||
       !shifts[d.phase] ||
       (d.selected && !getReq(d.selected)) ||
@@ -475,13 +589,19 @@
       !d.loans.length ||
       !d.loans.every(
         (l) =>
-          l && getReq(l.req) && getAsset(l.asset) && Number.isInteger(l.num),
+          l &&
+          getReq(l.req) &&
+          getAsset(l.asset) &&
+          Number.isInteger(l.num) &&
+          (l.by === undefined || people.includes(l.by)),
       )
     )
       return;
     s = {
       ...original(),
       ...d,
+      version: 2,
+      checkin: null,
       loans: d.loans.map((l) => ({ ...l })),
       notes: d.notes.map((n) => ({ ...n })),
     };

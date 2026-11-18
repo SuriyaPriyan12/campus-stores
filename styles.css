@@ -369,3 +369,13 @@ body > main {
     min-height: 44px;
   }
 }
+#campus-stores .formerror {
+  color: var(--mark);
+  font-size: 13px;
+  font-weight: 600;
+  border-left: 3px solid var(--mark);
+  padding-left: 8px;
+}
+#campus-stores .form small {
+  color: var(--quiet);
+}
