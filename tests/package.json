@@ -1,0 +1,12 @@
+{
+  "name": "campus-stores-tests",
+  "private": true,
+  "description": "Dev-only scenario tests. The app itself has no dependencies.",
+  "scripts": {
+    "test": "node shift.spec.mjs",
+    "test:original": "node shift.spec.mjs --original"
+  },
+  "devDependencies": {
+    "playwright": "1.48.2"
+  }
+}
